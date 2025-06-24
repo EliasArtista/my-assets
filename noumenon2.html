@@ -24,7 +24,7 @@
             min-width: 100%;
             min-height: 100%;
             z-index: -100;
-            opacity: 0.3; /* Set opacity to 30% */
+            opacity: 0.15; /* Set opacity to 15% */
             object-fit: cover; /* This will cover the area, maintaining aspect ratio */
         }
         /* Styling for the instruction overlay */
@@ -76,7 +76,7 @@
 <body>
     <!-- Background Video -->
     <video autoplay muted loop id="bg-video">
-        <source src="https://video.wixstatic.com/video/0b59fa_6aee3656ed344894bad682a1e4f310e3/1080p/mp4/file.mp4" type="video/mp4">
+        <source src="https://video.wixstatic.com/video/0b59fa_8d9de5e8d87e4535b01bfc7c4521cd46/1080p/mp4/file.mp4" type="video/mp4">
     </video>
 
     <!-- Blocker element for pointer lock instructions -->
@@ -133,7 +133,7 @@
             // --- Asset Loading ---
             const loadingManager = new THREE.LoadingManager();
             const textureLoader = new THREE.TextureLoader(loadingManager);
-            const imageUrl = 'https://static.wixstatic.com/media/0b59fa_3fe2ed09c5cd4419bf6827d673f41701~mv2.jpg';
+            const imageUrl = 'https://static.wixstatic.com/media/0b59fa_c422e2ca70784162adab9744fb7ce4e1~mv2.jpg';
             
             let loadedTexture;
             // The texture is loaded here and the manager tracks it.

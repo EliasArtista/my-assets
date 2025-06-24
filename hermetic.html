@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Image Plane Explorer</title>
+    <style>
+        /* Basic styles to make the canvas fill the page */
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: sans-serif;
+            background-color: #fff; /* Fallback for a white background */
+        }
+        canvas {
+            display: block;
+            cursor: pointer;
+        }
+        /* Styling for the background video */
+        #bg-video {
+            position: fixed;
+            right: 0;
+            bottom: 0;
+            min-width: 100%;
+            min-height: 100%;
+            z-index: -100;
+            opacity: 0.15; /* Set opacity to 15% */
+            object-fit: cover; /* This will cover the area, maintaining aspect ratio */
+        }
+        /* Styling for the instruction overlay */
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #instructions {
+            width: 80%;
+            max-width: 200px; 
+            padding: 15px;
+            background-color: rgba(255,255,255,0.8); 
+            border-radius: 12px;
+            text-align: center;
+            color: #333;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        #instructions.interactive {
+            cursor: pointer;
+        }
+        #instructions h2 {
+            margin-top: 0;
+            font-size: 1.2em;
+        }
+        #instructions p {
+            font-size: 0.9em; 
+            line-height: 1.4;
+        }
+        /* Styling for the speed indicator */
+        #speed-indicator {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 8px;
+            font-size: 1em;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Video -->
+    <video autoplay muted loop id="bg-video">
+        <source src="https://video.wixstatic.com/video/0b59fa_aa5adeff039047a096918a443c7758a8/1080p/mp4/file.mp4" type="video/mp4">
+    </video>
+
+    <!-- Blocker element for pointer lock instructions -->
+    <div id="blocker">
+        <div id="instructions">
+            <h2>Loading...</h2>
+            <p>Please wait.</p>
+        </div>
+    </div>
+
+    <!-- Speed indicator UI element -->
+    <div id="speed-indicator"></div>
+
+    <!-- Import three.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Import PointerLockControls for mouse look -->
+    <script type="module">
+        import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/controls/PointerLockControls.js';
+
+        let scene, camera, renderer, controls;
+        let planeMesh;
+
+        // --- Control State Variables ---
+        let moveSpeed = 400.0;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let moveUp = false, moveDown = false;
+        
+        let prevTime = performance.now();
+        let speedIndicatorTimeout;
+        
+        // --- Movement Boundaries ---
+        const MIN_DISTANCE = 51;
+        const MAX_DISTANCE = 25000;
+
+        function init() {
+            // --- Scene Setup ---
+            scene = new THREE.Scene();
+
+            // --- Camera Setup ---
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 50, 50000);
+            camera.position.set(-56.3, -7978.9, 4038.7); 
+
+            // --- Renderer Setup ---
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                alpha: true 
+            });
+            // --- SUPER-SAMPLING ANTI-ALIASING ---
+            renderer.setPixelRatio(2); 
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000, 0); 
+            document.body.appendChild(renderer.domElement);
+            
+            // --- Asset Loading ---
+            const loadingManager = new THREE.LoadingManager();
+            const textureLoader = new THREE.TextureLoader(loadingManager);
+            const imageUrl = 'https://static.wixstatic.com/media/0b59fa_4b3a72e2bd654f7f8cc4eb5772074c3a~mv2.jpg';
+            
+            let loadedTexture;
+            // The texture is loaded here and the manager tracks it.
+            textureLoader.load(imageUrl, (texture) => {
+                loadedTexture = texture;
+            });
+            
+            // This now correctly waits for the textureLoader.load call to complete.
+            loadingManager.onLoad = () => {
+                setupSceneWithTexture(loadedTexture);
+            };
+
+            loadingManager.onError = (url) => {
+                console.error('There was an error loading ' + url);
+                const instructions = document.getElementById('instructions');
+                instructions.innerHTML = `<h2>Error</h2><p>Could not load image.</p>`;
+            };
+
+            // --- Event Listeners ---
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // Start the animation loop immediately
+            animate();
+        }
+
+        function setupSceneWithTexture(texture) {
+            // --- Improve Texture Quality ---
+            texture.minFilter = THREE.LinearMipmapLinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+            texture.anisotropy = maxAnisotropy;
+            texture.needsUpdate = true;
+
+            const planeSize = 10000;
+            const aspectRatio = texture.image ? texture.image.width / texture.image.height : 1;
+            const planeGeometry = new THREE.PlaneGeometry(planeSize, planeSize / aspectRatio);
+            
+            const planeMaterial = new THREE.MeshBasicMaterial({ 
+                map: texture,
+                side: THREE.DoubleSide 
+            });
+
+            planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
+            scene.add(planeMesh);
+            
+            // --- Controls Setup (Now that the plane exists) ---
+            setupControls();
+
+            // Aim the camera AFTER the plane and controls are fully set up.
+            camera.lookAt(planeMesh.position);
+            
+            // Update UI to be interactive
+            const instructions = document.getElementById('instructions');
+            instructions.classList.add('interactive');
+            instructions.innerHTML = `<h2>Click to Explore</h2><p>W,A,S,D: Fly<br>E,Q: Up/Down<br>Mouse: Look<br>Wheel: Speed</p><p style="margin-top: 10px; font-size: 0.8em;">(ESC to release)</p>`;
+        }
+
+        function setupControls() {
+            controls = new PointerLockControls(camera, document.body);
+
+            const blocker = document.getElementById('blocker');
+            const instructions = document.getElementById('instructions');
+            
+            instructions.addEventListener('click', () => {
+                if(instructions.classList.contains('interactive')) {
+                    controls.lock();
+                }
+            });
+
+            controls.addEventListener('lock', () => {
+                 blocker.style.display = 'none';
+            });
+            controls.addEventListener('unlock', () => {
+                blocker.style.display = 'flex';
+            });
+
+            scene.add(controls.getObject());
+
+            // Updated key bindings
+            const onKey = (event, isDown) => {
+                switch (event.code) {
+                    case 'KeyW': case 'ArrowUp': moveForward = isDown; break;
+                    case 'KeyA': case 'ArrowLeft': moveLeft = isDown; break;
+                    case 'KeyS': case 'ArrowDown': moveBackward = isDown; break;
+                    case 'KeyD': case 'ArrowRight': moveRight = isDown; break;
+                    case 'KeyE': moveUp = isDown; break; // E for Up
+                    case 'KeyQ': moveDown = isDown; break; // Q for Down
+                }
+            };
+            document.addEventListener('keydown', (e) => onKey(e, true));
+            document.addEventListener('keyup', (e) => onKey(e, false));
+
+            document.addEventListener('wheel', (event) => {
+                if (event.deltaY < 0) moveSpeed *= 1.2;
+                else moveSpeed /= 1.2;
+                moveSpeed = Math.max(50, Math.min(12000, moveSpeed));
+                showSpeedIndicator();
+            });
+        }
+        
+        function showSpeedIndicator() {
+            const speedIndicator = document.getElementById('speed-indicator');
+            speedIndicator.textContent = `Speed: ${Math.round(moveSpeed)}`;
+            speedIndicator.style.opacity = '1';
+            clearTimeout(speedIndicatorTimeout);
+            speedIndicatorTimeout = setTimeout(() => {
+                speedIndicator.style.opacity = '0';
+            }, 2000);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- Reusable objects for calculations ---
+        const forwardVector = new THREE.Vector3();
+        const rightVector = new THREE.Vector3();
+        const moveVector = new THREE.Vector3();
+        const nextPosition = new THREE.Vector3();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+            
+            // Only perform updates if controls have been initialized
+            if (controls && controls.isLocked) {
+                const moveDistance = moveSpeed * delta;
+                
+                // Get camera-relative vectors for flying
+                camera.getWorldDirection(forwardVector);
+                rightVector.setFromMatrixColumn(camera.matrixWorld, 0);
+
+                // Calculate camera-relative movement
+                moveVector.set(0,0,0);
+                if (moveForward) moveVector.add(forwardVector);
+                if (moveBackward) moveVector.sub(forwardVector);
+                if (moveRight) moveVector.add(rightVector);
+                if (moveLeft) moveVector.sub(rightVector);
+
+                if (moveVector.lengthSq() > 0) {
+                    moveVector.normalize();
+                }
+
+                // Create the next potential position based on fly controls
+                nextPosition.copy(camera.position).addScaledVector(moveVector, moveDistance);
+
+                // Add world-relative vertical movement
+                if (moveUp) nextPosition.y += moveDistance;
+                if (moveDown) nextPosition.y -= moveDistance;
+
+                // --- Boundary Check ---
+                // Ensure planeMesh exists before checking distance
+                if (planeMesh) {
+                    const nextDist = nextPosition.distanceTo(planeMesh.position);
+                    if (nextDist > MIN_DISTANCE && nextDist < MAX_DISTANCE) {
+                        // If valid, apply the new position
+                        camera.position.copy(nextPosition);
+                    }
+                }
+            }
+            
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+
+        // --- Start the experience ---
+        init();
+    </script>
+</body>
+</html>

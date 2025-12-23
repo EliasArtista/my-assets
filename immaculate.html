@@ -1,683 +1,3 @@
-Gemini
-
-Adding Mobile Touch Controls to 3D Explorer
-My stuff
-3D Image Plane Explorer with Touch
-Wix FBX Viewer
-Video-Textured Star
-Adding Mobile Touch Controls to 3D Explorer
-Disable Mobile Text Selection in Wix
-Wix FBX Loading Delay Fix
-3D Parallax Shader Code Preview
-Wix HTML Widget: 3D Parallax Shader
-create a depth map out of this render, keep the same aspect ratio, do not distort or stretch. keep to the original dimensions.
-Generate latin alphabet chart. Uppercase only.
-using this image as a reference for shapes only, create a black and white latin alphabet chart. I will ask for a few versions, for now give me version 1.
-do an x-ray scan of this
-can you turn this into a roughness map
-make a normal map from this image. Pay attention to fine details. Tangent space, blue Y-channel dominant. Stay very precise to and true to the original image in terms of shapes, aspect ratio and dimensions.
-can you create a depth map for parallax effect.
-create a depth map out of this render, keep the same aspect ratio, do not distort or stretch. keep to the original dimensions.
-Make a normal map from this B&W render. Pay attention to fine details. Tangent space, blue Y-channel dominant, do not distort or change the aspect ratio
-Make a normal map from this B&W render. Pay attention to fine details. Tangent space, blue Y-channel dominant.
-turn this attached image into a renaissance era sketch
-Conversation with Gemini
-can you add to this code also touch controls for mobile version ? i want to be able to use fingers to navigate .
-
-
-
-
-
-<!DOCTYPE html>
-
-<html lang="en">
-
-<head>
-
-    <meta charset="UTF-8">
-
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>3D Image Plane Explorer</title>
-
-    <style>
-
-        /* Basic styles to make the canvas fill the page */
-
-        body {
-
-            margin: 0;
-
-            overflow: hidden;
-
-            font-family: sans-serif;
-
-            background-color: #000; /* Fallback for a black background */
-
-        }
-
-        canvas {
-
-            display: block;
-
-            cursor: pointer;
-
-        }
-
-        /* Styling for the background video */
-
-        #bg-video {
-
-            position: fixed;
-
-            right: 0;
-
-            bottom: 0;
-
-            min-width: 100%;
-
-            min-height: 100%;
-
-            z-index: -100;
-
-            opacity: 0.3; /* Set opacity to 30% */
-
-            object-fit: cover; /* This will cover the area, maintaining aspect ratio */
-
-        }
-
-        /* Styling for the instruction overlay */
-
-        #blocker {
-
-            position: absolute;
-
-            width: 100%;
-
-            height: 100%;
-
-            background-color: rgba(0,0,0,0.5);
-
-            display: flex;
-
-            justify-content: center;
-
-            align-items: center;
-
-        }
-
-        #instructions {
-
-            width: 80%;
-
-            max-width: 200px; 
-
-            padding: 15px;
-
-            background-color: rgba(255,255,255,0.8); 
-
-            border-radius: 12px;
-
-            text-align: center;
-
-            color: #333;
-
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-
-        }
-
-        #instructions.interactive {
-
-            cursor: pointer;
-
-        }
-
-        #instructions h2 {
-
-            margin-top: 0;
-
-            font-size: 1.2em;
-
-        }
-
-        #instructions p {
-
-            font-size: 0.9em; 
-
-            line-height: 1.4;
-
-        }
-
-        /* Styling for the speed indicator */
-
-        #speed-indicator {
-
-            position: absolute;
-
-            bottom: 20px;
-
-            left: 20px;
-
-            background-color: rgba(0, 0, 0, 0.6);
-
-            color: white;
-
-            padding: 8px 15px;
-
-            border-radius: 8px;
-
-            font-size: 1em;
-
-            opacity: 0;
-
-            transition: opacity 0.5s ease-in-out;
-
-        }
-
-    </style>
-
-</head>
-
-<body>
-
-    <!-- Background Video -->
-
-    <video autoplay muted loop id="bg-video">
-
-        <source src="https://video.wixstatic.com/video/0b59fa_6aee3656ed344894bad682a1e4f310e3/1080p/mp4/file.mp4" type="video/mp4">
-
-    </video>
-
-
-
-    <!-- Blocker element for pointer lock instructions -->
-
-    <div id="blocker">
-
-        <div id="instructions">
-
-            <h2>Loading...</h2>
-
-            <p>Please wait.</p>
-
-        </div>
-
-    </div>
-
-
-
-    <!-- Speed indicator UI element -->
-
-    <div id="speed-indicator"></div>
-
-
-
-    <!-- Import three.js library -->
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
-    <!-- Import PointerLockControls for mouse look -->
-
-    <script type="module">
-
-        import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/controls/PointerLockControls.js';
-
-
-
-        let scene, camera, renderer, controls;
-
-        let planeMesh;
-
-
-
-        // --- Control State Variables ---
-
-        let moveSpeed = 400.0;
-
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-
-        let moveUp = false, moveDown = false;
-
-        
-
-        let prevTime = performance.now();
-
-        let speedIndicatorTimeout;
-
-        
-
-        // --- Movement Boundaries ---
-
-        const MIN_DISTANCE = 51;
-
-        const MAX_DISTANCE = 25000;
-
-
-
-        function init() {
-
-            // --- Scene Setup ---
-
-            scene = new THREE.Scene();
-
-
-
-            // --- Camera Setup ---
-
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 50, 50000);
-
-            camera.position.set(-56.3, -7978.9, 4038.7); 
-
-
-
-            // --- Renderer Setup ---
-
-            renderer = new THREE.WebGLRenderer({ 
-
-                antialias: true,
-
-                alpha: true 
-
-            });
-
-            // --- SUPER-SAMPLING ANTI-ALIASING ---
-
-            renderer.setPixelRatio(2); 
-
-            renderer.setSize(window.innerWidth, window.innerHeight);
-
-            renderer.setClearColor(0x000000, 0); 
-
-            document.body.appendChild(renderer.domElement);
-
-            
-
-            // --- Asset Loading ---
-
-            const loadingManager = new THREE.LoadingManager();
-
-            const textureLoader = new THREE.TextureLoader(loadingManager);
-
-            const imageUrl = 'https://static.wixstatic.com/media/0b59fa_3fe2ed09c5cd4419bf6827d673f41701~mv2.jpg';
-
-            
-
-            let loadedTexture;
-
-            // The texture is loaded here and the manager tracks it.
-
-            textureLoader.load(imageUrl, (texture) => {
-
-                loadedTexture = texture;
-
-            });
-
-            
-
-            // This now correctly waits for the textureLoader.load call to complete.
-
-            loadingManager.onLoad = () => {
-
-                setupSceneWithTexture(loadedTexture);
-
-            };
-
-
-
-            loadingManager.onError = (url) => {
-
-                console.error('There was an error loading ' + url);
-
-                const instructions = document.getElementById('instructions');
-
-                instructions.innerHTML = `<h2>Error</h2><p>Could not load image.</p>`;
-
-            };
-
-
-
-            // --- Event Listeners ---
-
-            window.addEventListener('resize', onWindowResize, false);
-
-            
-
-            // Start the animation loop immediately
-
-            animate();
-
-        }
-
-
-
-        function setupSceneWithTexture(texture) {
-
-            // --- Improve Texture Quality ---
-
-            texture.minFilter = THREE.LinearMipmapLinearFilter;
-
-            texture.magFilter = THREE.LinearFilter;
-
-            const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-
-            texture.anisotropy = maxAnisotropy;
-
-            texture.needsUpdate = true;
-
-
-
-            const planeSize = 10000;
-
-            const aspectRatio = texture.image ? texture.image.width / texture.image.height : 1;
-
-            const planeGeometry = new THREE.PlaneGeometry(planeSize, planeSize / aspectRatio);
-
-            
-
-            const planeMaterial = new THREE.MeshBasicMaterial({ 
-
-                map: texture,
-
-                side: THREE.DoubleSide 
-
-            });
-
-
-
-            planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
-
-            scene.add(planeMesh);
-
-            
-
-            // --- Controls Setup (Now that the plane exists) ---
-
-            setupControls();
-
-
-
-            // Aim the camera AFTER the plane and controls are fully set up.
-
-            camera.lookAt(planeMesh.position);
-
-            
-
-            // Update UI to be interactive
-
-            const instructions = document.getElementById('instructions');
-
-            instructions.classList.add('interactive');
-
-            instructions.innerHTML = `<h2>Click to Explore</h2><p>W,A,S,D: Fly<br>E,Q: Up/Down<br>Mouse: Look<br>Wheel: Speed</p><p style="margin-top: 10px; font-size: 0.8em;">(ESC to release)</p>`;
-
-        }
-
-
-
-        function setupControls() {
-
-            controls = new PointerLockControls(camera, document.body);
-
-
-
-            const blocker = document.getElementById('blocker');
-
-            const instructions = document.getElementById('instructions');
-
-            
-
-            instructions.addEventListener('click', () => {
-
-                if(instructions.classList.contains('interactive')) {
-
-                    controls.lock();
-
-                }
-
-            });
-
-
-
-            controls.addEventListener('lock', () => {
-
-                 blocker.style.display = 'none';
-
-            });
-
-            controls.addEventListener('unlock', () => {
-
-                blocker.style.display = 'flex';
-
-            });
-
-
-
-            scene.add(controls.getObject());
-
-
-
-            // Updated key bindings
-
-            const onKey = (event, isDown) => {
-
-                switch (event.code) {
-
-                    case 'KeyW': case 'ArrowUp': moveForward = isDown; break;
-
-                    case 'KeyA': case 'ArrowLeft': moveLeft = isDown; break;
-
-                    case 'KeyS': case 'ArrowDown': moveBackward = isDown; break;
-
-                    case 'KeyD': case 'ArrowRight': moveRight = isDown; break;
-
-                    case 'KeyE': moveUp = isDown; break; // E for Up
-
-                    case 'KeyQ': moveDown = isDown; break; // Q for Down
-
-                }
-
-            };
-
-            document.addEventListener('keydown', (e) => onKey(e, true));
-
-            document.addEventListener('keyup', (e) => onKey(e, false));
-
-
-
-            document.addEventListener('wheel', (event) => {
-
-                if (event.deltaY < 0) moveSpeed *= 1.2;
-
-                else moveSpeed /= 1.2;
-
-                moveSpeed = Math.max(50, Math.min(12000, moveSpeed));
-
-                showSpeedIndicator();
-
-            });
-
-        }
-
-        
-
-        function showSpeedIndicator() {
-
-            const speedIndicator = document.getElementById('speed-indicator');
-
-            speedIndicator.textContent = `Speed: ${Math.round(moveSpeed)}`;
-
-            speedIndicator.style.opacity = '1';
-
-            clearTimeout(speedIndicatorTimeout);
-
-            speedIndicatorTimeout = setTimeout(() => {
-
-                speedIndicator.style.opacity = '0';
-
-            }, 2000);
-
-        }
-
-
-
-        function onWindowResize() {
-
-            camera.aspect = window.innerWidth / window.innerHeight;
-
-            camera.updateProjectionMatrix();
-
-            renderer.setSize(window.innerWidth, window.innerHeight);
-
-        }
-
-
-
-        // --- Reusable objects for calculations ---
-
-        const forwardVector = new THREE.Vector3();
-
-        const rightVector = new THREE.Vector3();
-
-        const moveVector = new THREE.Vector3();
-
-        const nextPosition = new THREE.Vector3();
-
-
-
-        function animate() {
-
-            requestAnimationFrame(animate);
-
-
-
-            const time = performance.now();
-
-            const delta = (time - prevTime) / 1000;
-
-            
-
-            // Only perform updates if controls have been initialized
-
-            if (controls && controls.isLocked) {
-
-                const moveDistance = moveSpeed * delta;
-
-                
-
-                // Get camera-relative vectors for flying
-
-                camera.getWorldDirection(forwardVector);
-
-                rightVector.setFromMatrixColumn(camera.matrixWorld, 0);
-
-
-
-                // Calculate camera-relative movement
-
-                moveVector.set(0,0,0);
-
-                if (moveForward) moveVector.add(forwardVector);
-
-                if (moveBackward) moveVector.sub(forwardVector);
-
-                if (moveRight) moveVector.add(rightVector);
-
-                if (moveLeft) moveVector.sub(rightVector);
-
-
-
-                if (moveVector.lengthSq() > 0) {
-
-                    moveVector.normalize();
-
-                }
-
-
-
-                // Create the next potential position based on fly controls
-
-                nextPosition.copy(camera.position).addScaledVector(moveVector, moveDistance);
-
-
-
-                // Add world-relative vertical movement
-
-                if (moveUp) nextPosition.y += moveDistance;
-
-                if (moveDown) nextPosition.y -= moveDistance;
-
-
-
-                // --- Boundary Check ---
-
-                // Ensure planeMesh exists before checking distance
-
-                if (planeMesh) {
-
-                    const nextDist = nextPosition.distanceTo(planeMesh.position);
-
-                    if (nextDist > MIN_DISTANCE && nextDist < MAX_DISTANCE) {
-
-                        // If valid, apply the new position
-
-                        camera.position.copy(nextPosition);
-
-                    }
-
-                }
-
-            }
-
-            
-
-            prevTime = time;
-
-            renderer.render(scene, camera);
-
-        }
-
-
-
-        // --- Start the experience ---
-
-        init();
-
-    </script>
-
-</body>
-
-</html>
-
-I will generate the updated HTML file with the added touch controls.
-
-Summary of Changes
-Touch UI Elements: Added a virtual joystick on the bottom-left for movement (WASD equivalent) and "Up/Down" buttons on the bottom-right.
-
-Touch Look Logic: Implemented screen drag logic (using the right side of the screen or empty space) to rotate the camera, mimicking the mouse-look behavior without needing pointer lock.
-
-Unified Input System: Refactored the movement logic in the animate loop to accept inputs from both the keyboard (discrete 0/1) and the touch joystick (analog 0.0-1.0), ensuring smooth movement regardless of the input method.
-
-Mobile Optimizations: Added CSS to ensure the UI scales correctly on mobile devices and prevents accidental scrolling/zooming (touch-action: none).
-
-3D Image Plane Explorer with Touch
-23 Dec, 18:15
-I have fixed the issue where the animation loop was trying to access the controls before they were fully loaded.
-
-I made some changes. I added a check in the animate loop to ensure controls exists before trying to access controls.isLocked. This prevents the "Cannot read properties of undefined" error that was occurring during the initial load sequence.
-
-to move forward or backwards (zoom) I want to use two fingers
-
-I have added the pinch-to-zoom functionality to the touch controls. Now, using two fingers on the screen will allow you to move forward (spread fingers) or backward (pinch fingers), similar to zooming in and out.
-
-
-
-
-Gemini can make mistakes, so double-check it
-
-3D Image Plane Explorer with Touch
-
-
-565566567568569570571572573574575576577578579580581582583584585586587588589590591592593594595596597598599
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -688,7 +8,607 @@ Gemini can make mistakes, so double-check it
         /* Basic styles to make the canvas fill the page */
         body {
             margin: 0;
-…        init();
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #000;
+            user-select: none; /* Prevent text selection on touch */
+            -webkit-user-select: none;
+        }
+        canvas {
+            display: block;
+        }
+
+        /* Styling for the background video */
+        #bg-video {
+            position: fixed;
+            right: 0;
+            bottom: 0;
+            min-width: 100%;
+            min-height: 100%;
+            z-index: -100;
+            opacity: 0.3;
+            object-fit: cover;
+        }
+
+        /* Styling for the instruction overlay */
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000; /* Above controls */
+        }
+        #instructions {
+            width: 80%;
+            max-width: 250px; 
+            padding: 20px;
+            background-color: rgba(20, 20, 20, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            text-align: center;
+            color: #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            transition: transform 0.2s;
+        }
+        #instructions.interactive:hover {
+            transform: scale(1.02);
+            cursor: pointer;
+        }
+        #instructions h2 {
+            margin-top: 0;
+            font-size: 1.4em;
+            font-weight: 300;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+        #instructions p {
+            font-size: 0.9em; 
+            line-height: 1.5;
+            color: #aaa;
+            margin-bottom: 0;
+        }
+
+        /* Speed indicator UI */
+        #speed-indicator {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(5px);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* --- Touch Controls UI --- */
+        .touch-ui {
+            display: none; /* Shown via JS detection or media query */
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let touches pass through to canvas for looking */
+            z-index: 100;
+        }
+
+        /* Joystick */
+        #joystick-zone {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            border-radius: 50%;
+            pointer-events: auto; /* Catch events */
+            touch-action: none;
+        }
+        #joystick-knob {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+            transition: transform 0.1s; /* Smooth return to center */
+        }
+        #joystick-knob.active {
+            transition: none; /* Instant follow when dragging */
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Buttons */
+        .button-group {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            pointer-events: auto;
+        }
+        .touch-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5em;
+            touch-action: none;
+            user-select: none;
+            backdrop-filter: blur(4px);
+            transition: background 0.1s;
+        }
+        .touch-btn:active {
+            background: rgba(255, 255, 255, 0.4);
+        }
+        
+        /* Show touch controls on touch devices or small screens */
+        @media (hover: none) and (pointer: coarse) {
+            .touch-ui { display: block; }
+            #instructions { font-size: 0.8em; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Video -->
+    <video autoplay muted loop id="bg-video">
+        <source src="https://video.wixstatic.com/video/0b59fa_6aee3656ed344894bad682a1e4f310e3/1080p/mp4/file.mp4" type="video/mp4">
+    </video>
+
+    <!-- Blocker element for pointer lock instructions -->
+    <div id="blocker">
+        <div id="instructions">
+            <h2>Loading...</h2>
+            <p>Please wait.</p>
+        </div>
+    </div>
+
+    <!-- Speed indicator UI element -->
+    <div id="speed-indicator">Speed: 400</div>
+
+    <!-- Touch Controls Overlay -->
+    <div class="touch-ui" id="touch-ui">
+        <!-- Virtual Joystick (Left) -->
+        <div id="joystick-zone">
+            <div id="joystick-knob"></div>
+        </div>
+
+        <!-- Action Buttons (Right) -->
+        <div class="button-group">
+            <div class="touch-btn" id="btn-up">↑</div>
+            <div class="touch-btn" id="btn-down">↓</div>
+        </div>
+    </div>
+
+    <!-- Import three.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Import PointerLockControls -->
+    <script type="module">
+        import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.128.0/examples/jsm/controls/PointerLockControls.js';
+
+        let scene, camera, renderer, controls;
+        let planeMesh;
+
+        // --- Input State ---
+        // We use a unified input state for both Keyboard and Touch
+        const inputState = {
+            fwd: 0,   // 0 to 1
+            back: 0,  // 0 to 1
+            left: 0,  // 0 to 1
+            right: 0, // 0 to 1
+            up: 0,    // 0 to 1
+            down: 0   // 0 to 1
+        };
+
+        let moveSpeed = 400.0;
+        let prevTime = performance.now();
+        let speedIndicatorTimeout;
+        
+        // --- Movement Boundaries ---
+        const MIN_DISTANCE = 51;
+        const MAX_DISTANCE = 25000;
+
+        // --- Touch State ---
+        let touchLookStart = { x: 0, y: 0 };
+        let touchLookDelta = { x: 0, y: 0 };
+        const LOOK_SENSITIVITY = 0.0025;
+
+        function init() {
+            // --- Scene Setup ---
+            scene = new THREE.Scene();
+
+            // --- Camera Setup ---
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 50, 50000);
+            camera.position.set(-56.3, -7978.9, 4038.7); 
+
+            // --- Renderer Setup ---
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                alpha: true 
+            });
+            renderer.setPixelRatio(window.devicePixelRatio); 
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000, 0); 
+            document.body.appendChild(renderer.domElement);
+            
+            // --- Asset Loading ---
+            const loadingManager = new THREE.LoadingManager();
+            const textureLoader = new THREE.TextureLoader(loadingManager);
+            const imageUrl = 'https://static.wixstatic.com/media/0b59fa_3fe2ed09c5cd4419bf6827d673f41701~mv2.jpg';
+            
+            let loadedTexture;
+            textureLoader.load(imageUrl, (texture) => {
+                loadedTexture = texture;
+            });
+            
+            loadingManager.onLoad = () => {
+                setupSceneWithTexture(loadedTexture);
+            };
+
+            loadingManager.onError = (url) => {
+                console.error('Error loading ' + url);
+                document.getElementById('instructions').innerHTML = `<h2>Error</h2><p>Could not load assets.</p>`;
+            };
+
+            // --- Event Listeners ---
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // Start loop
+            animate();
+        }
+
+        function setupSceneWithTexture(texture) {
+            texture.minFilter = THREE.LinearMipmapLinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+            const planeSize = 10000;
+            const aspectRatio = texture.image ? texture.image.width / texture.image.height : 1;
+            const planeGeometry = new THREE.PlaneGeometry(planeSize, planeSize / aspectRatio);
+            
+            const planeMaterial = new THREE.MeshBasicMaterial({ 
+                map: texture,
+                side: THREE.DoubleSide 
+            });
+
+            planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
+            scene.add(planeMesh);
+            
+            setupControls();
+            setupTouchControls(); // Initialize the new touch logic
+
+            camera.lookAt(planeMesh.position);
+            
+            // Update UI
+            const instructions = document.getElementById('instructions');
+            instructions.classList.add('interactive');
+            
+            // Detect if likely mobile to adjust text
+            const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+            if (isTouch) {
+                document.querySelector('.touch-ui').style.display = 'block';
+                instructions.innerHTML = `<h2>Tap to Start</h2><p>Left Stick: Move<br>2 Fingers: Zoom<br>Buttons: Up/Down</p>`;
+            } else {
+                instructions.innerHTML = `<h2>Click to Explore</h2><p>W,A,S,D: Fly<br>E,Q: Up/Down<br>Mouse: Look<br>Wheel: Speed</p>`;
+            }
+        }
+
+        function setupControls() {
+            controls = new PointerLockControls(camera, document.body);
+
+            const blocker = document.getElementById('blocker');
+            const instructions = document.getElementById('instructions');
+            
+            // On Click/Tap of the overlay
+            instructions.addEventListener('click', () => {
+                if(instructions.classList.contains('interactive')) {
+                    // Only use PointerLock on non-touch devices
+                    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+                    if (!isTouch) {
+                        controls.lock();
+                    } else {
+                        // For touch, just hide the blocker
+                        blocker.style.display = 'none';
+                    }
+                }
+            });
+
+            controls.addEventListener('lock', () => { blocker.style.display = 'none'; });
+            controls.addEventListener('unlock', () => { blocker.style.display = 'flex'; });
+
+            scene.add(controls.getObject());
+
+            // Keyboard Listeners
+            const onKey = (event, isDown) => {
+                const val = isDown ? 1 : 0;
+                switch (event.code) {
+                    case 'KeyW': case 'ArrowUp': inputState.fwd = val; break;
+                    case 'KeyS': case 'ArrowDown': inputState.back = val; break;
+                    case 'KeyA': case 'ArrowLeft': inputState.left = val; break;
+                    case 'KeyD': case 'ArrowRight': inputState.right = val; break;
+                    case 'KeyE': inputState.up = val; break; 
+                    case 'KeyQ': inputState.down = val; break; 
+                }
+            };
+            document.addEventListener('keydown', (e) => onKey(e, true));
+            document.addEventListener('keyup', (e) => onKey(e, false));
+
+            // Mouse Wheel Speed
+            document.addEventListener('wheel', (event) => {
+                if (event.deltaY < 0) moveSpeed *= 1.1;
+                else moveSpeed /= 1.1;
+                moveSpeed = Math.max(50, Math.min(12000, moveSpeed));
+                showSpeedIndicator();
+            });
+        }
+
+        // --- NEW: Touch Control Logic ---
+        function setupTouchControls() {
+            const joystickZone = document.getElementById('joystick-zone');
+            const joystickKnob = document.getElementById('joystick-knob');
+            const btnUp = document.getElementById('btn-up');
+            const btnDown = document.getElementById('btn-down');
+
+            // --- Joystick Logic ---
+            let joystickCenter = { x: 0, y: 0 };
+            let joystickTouchId = null;
+
+            joystickZone.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.changedTouches[0];
+                joystickTouchId = touch.identifier;
+                
+                const rect = joystickZone.getBoundingClientRect();
+                joystickCenter = { 
+                    x: rect.left + rect.width / 2, 
+                    y: rect.top + rect.height / 2 
+                };
+                joystickKnob.classList.add('active');
+                updateJoystick(touch);
+            }, { passive: false });
+
+            joystickZone.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === joystickTouchId) {
+                        updateJoystick(e.changedTouches[i]);
+                        break;
+                    }
+                }
+            }, { passive: false });
+
+            const endJoystick = (e) => {
+                e.preventDefault();
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === joystickTouchId) {
+                        joystickTouchId = null;
+                        joystickKnob.style.transform = `translate(-50%, -50%)`;
+                        joystickKnob.classList.remove('active');
+                        // Reset move inputs
+                        inputState.fwd = 0;
+                        inputState.back = 0;
+                        inputState.left = 0;
+                        inputState.right = 0;
+                        break;
+                    }
+                }
+            };
+            joystickZone.addEventListener('touchend', endJoystick);
+            joystickZone.addEventListener('touchcancel', endJoystick);
+
+            function updateJoystick(touch) {
+                const maxDist = 60; // Max radius of joystick
+                let dx = touch.clientX - joystickCenter.x;
+                let dy = touch.clientY - joystickCenter.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                
+                // Clamp visual knob
+                if (dist > maxDist) {
+                    const ratio = maxDist / dist;
+                    dx *= ratio;
+                    dy *= ratio;
+                }
+                
+                joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+                // Map to inputs (-1 to 1)
+                const normX = dx / maxDist;
+                const normY = dy / maxDist;
+
+                // Threshold to avoid drift
+                const threshold = 0.2;
+                
+                if (normY < -threshold) inputState.fwd = Math.abs(normY); else inputState.fwd = 0;
+                if (normY > threshold) inputState.back = Math.abs(normY); else inputState.back = 0;
+                if (normX < -threshold) inputState.left = Math.abs(normX); else inputState.left = 0;
+                if (normX > threshold) inputState.right = Math.abs(normX); else inputState.right = 0;
+            }
+
+            // --- Button Logic ---
+            const bindBtn = (elem, type) => {
+                elem.addEventListener('touchstart', (e) => { e.preventDefault(); inputState[type] = 1; });
+                elem.addEventListener('touchend', (e) => { e.preventDefault(); inputState[type] = 0; });
+            };
+            bindBtn(btnUp, 'up');
+            bindBtn(btnDown, 'down');
+
+            // --- Touch Look & Pinch Logic ---
+            let pinchStartDist = 0;
+
+            document.body.addEventListener('touchstart', (e) => {
+                if (e.target.closest('#joystick-zone') || e.target.closest('.touch-btn')) return;
+
+                if (e.touches.length === 2) {
+                     // Two fingers: Start Pinch
+                     const dx = e.touches[0].clientX - e.touches[1].clientX;
+                     const dy = e.touches[0].clientY - e.touches[1].clientY;
+                     pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+                } else if (e.touches.length === 1) {
+                     // One finger: Start Look
+                     const touch = e.touches[0];
+                     touchLookStart = { x: touch.clientX, y: touch.clientY };
+                }
+            }, { passive: false });
+
+            document.body.addEventListener('touchmove', (e) => {
+                if (e.target.closest('#joystick-zone') || e.target.closest('.touch-btn')) return;
+                
+                if(e.cancelable) e.preventDefault();
+
+                if (e.touches.length === 2) {
+                    // Two fingers: Handle Pinch (Move Forward/Back)
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    const diff = dist - pinchStartDist;
+                    
+                    // Sensitivity: convert pixel distance change to movement speed
+                    const sensitivity = 0.05; 
+                    
+                    if (diff > 0) {
+                        inputState.fwd = Math.min(1, diff * sensitivity);
+                        inputState.back = 0;
+                    } else {
+                        inputState.back = Math.min(1, -diff * sensitivity);
+                        inputState.fwd = 0;
+                    }
+                    
+                    // Update start dist to create "scrolling" feel
+                    pinchStartDist = dist;
+
+                } else if (e.touches.length === 1) {
+                    // One finger: Handle Look
+                    const touch = e.touches[0];
+                    const deltaX = touch.clientX - touchLookStart.x;
+                    const deltaY = touch.clientY - touchLookStart.y;
+
+                    // Apply rotation
+                    if (!controls.isLocked) {
+                        const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+                        euler.setFromQuaternion(camera.quaternion);
+
+                        euler.y -= deltaX * LOOK_SENSITIVITY;
+                        euler.x -= deltaY * LOOK_SENSITIVITY;
+                        euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
+
+                        camera.quaternion.setFromEuler(euler);
+                    }
+
+                    touchLookStart = { x: touch.clientX, y: touch.clientY };
+                }
+            }, { passive: false });
+
+            // Cleanup on touch end
+            document.body.addEventListener('touchend', (e) => {
+                // If we went from 2 fingers to <2, stop moving
+                if (e.touches.length < 2) {
+                    inputState.fwd = 0;
+                    inputState.back = 0;
+                }
+                
+                // If one finger remains, reset look start to prevent jumping
+                if (e.touches.length === 1) {
+                     const touch = e.touches[0];
+                     touchLookStart = { x: touch.clientX, y: touch.clientY };
+                }
+            });
+        }
+        
+        function showSpeedIndicator() {
+            const speedIndicator = document.getElementById('speed-indicator');
+            speedIndicator.textContent = `Speed: ${Math.round(moveSpeed)}`;
+            speedIndicator.style.opacity = '1';
+            clearTimeout(speedIndicatorTimeout);
+            speedIndicatorTimeout = setTimeout(() => {
+                speedIndicator.style.opacity = '0';
+            }, 2000);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        const forwardVector = new THREE.Vector3();
+        const rightVector = new THREE.Vector3();
+        const moveVector = new THREE.Vector3();
+        const nextPosition = new THREE.Vector3();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+            
+            // Check if controls are active (Locked OR Touch UI visible/active)
+            const isTouchActive = document.querySelector('.touch-ui').style.display !== 'none';
+            
+            // We process movement if locked OR if we are in touch mode and the blocker is hidden
+            // FIX: Check if controls exist before checking isLocked
+            const canMove = controls && (controls.isLocked || (isTouchActive && document.getElementById('blocker').style.display === 'none'));
+
+            if (canMove) {
+                const moveDistance = moveSpeed * delta;
+                
+                camera.getWorldDirection(forwardVector);
+                rightVector.setFromMatrixColumn(camera.matrixWorld, 0);
+
+                moveVector.set(0,0,0);
+                
+                // Combine Keyboard (0/1) and Touch (0.0-1.0) inputs
+                // Using max ensures either works
+                if (inputState.fwd > 0) moveVector.addScaledVector(forwardVector, inputState.fwd);
+                if (inputState.back > 0) moveVector.addScaledVector(forwardVector, -inputState.back);
+                if (inputState.right > 0) moveVector.addScaledVector(rightVector, inputState.right);
+                if (inputState.left > 0) moveVector.addScaledVector(rightVector, -inputState.left);
+
+                if (moveVector.lengthSq() > 0) {
+                    moveVector.normalize();
+                }
+
+                nextPosition.copy(camera.position).addScaledVector(moveVector, moveDistance);
+
+                // Vertical movement
+                if (inputState.up > 0) nextPosition.y += moveDistance * inputState.up;
+                if (inputState.down > 0) nextPosition.y -= moveDistance * inputState.down;
+
+                // Boundary Check
+                if (planeMesh) {
+                    const nextDist = nextPosition.distanceTo(planeMesh.position);
+                    if (nextDist > MIN_DISTANCE && nextDist < MAX_DISTANCE) {
+                        camera.position.copy(nextPosition);
+                    }
+                }
+            }
+            
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+
+        init();
     </script>
 </body>
 </html>

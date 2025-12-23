@@ -308,7 +308,7 @@
             const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
             if (isTouch) {
                 document.querySelector('.touch-ui').style.display = 'block';
-                instructions.innerHTML = `<h2>Tap to Start</h2><p>Left Stick: Move<br>Right Screen: Look<br>Buttons: Up/Down</p>`;
+                instructions.innerHTML = `<h2>Tap to Start</h2><p>Left Stick: Move<br>2 Fingers: Zoom<br>Buttons: Up/Down</p>`;
             } else {
                 instructions.innerHTML = `<h2>Click to Explore</h2><p>W,A,S,D: Fly<br>E,Q: Up/Down<br>Mouse: Look<br>Wheel: Speed</p>`;
             }
@@ -453,44 +453,87 @@
             bindBtn(btnUp, 'up');
             bindBtn(btnDown, 'down');
 
-            // --- Touch Look Logic (Right side / General) ---
-            // We attach to body but ignore if target is joystick/buttons
+            // --- Touch Look & Pinch Logic ---
+            let pinchStartDist = 0;
+
             document.body.addEventListener('touchstart', (e) => {
-                // If touching UI, ignore for look
                 if (e.target.closest('#joystick-zone') || e.target.closest('.touch-btn')) return;
 
-                // Assume this is a look touch
-                const touch = e.changedTouches[0];
-                touchLookStart = { x: touch.clientX, y: touch.clientY };
+                if (e.touches.length === 2) {
+                     // Two fingers: Start Pinch
+                     const dx = e.touches[0].clientX - e.touches[1].clientX;
+                     const dy = e.touches[0].clientY - e.touches[1].clientY;
+                     pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+                } else if (e.touches.length === 1) {
+                     // One finger: Start Look
+                     const touch = e.touches[0];
+                     touchLookStart = { x: touch.clientX, y: touch.clientY };
+                }
             }, { passive: false });
 
             document.body.addEventListener('touchmove', (e) => {
                 if (e.target.closest('#joystick-zone') || e.target.closest('.touch-btn')) return;
                 
-                // Prevent scrolling
                 if(e.cancelable) e.preventDefault();
 
-                const touch = e.changedTouches[0];
-                const deltaX = touch.clientX - touchLookStart.x;
-                const deltaY = touch.clientY - touchLookStart.y;
+                if (e.touches.length === 2) {
+                    // Two fingers: Handle Pinch (Move Forward/Back)
+                    const dx = e.touches[0].clientX - e.touches[1].clientX;
+                    const dy = e.touches[0].clientY - e.touches[1].clientY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    const diff = dist - pinchStartDist;
+                    
+                    // Sensitivity: convert pixel distance change to movement speed
+                    const sensitivity = 0.05; 
+                    
+                    if (diff > 0) {
+                        inputState.fwd = Math.min(1, diff * sensitivity);
+                        inputState.back = 0;
+                    } else {
+                        inputState.back = Math.min(1, -diff * sensitivity);
+                        inputState.fwd = 0;
+                    }
+                    
+                    // Update start dist to create "scrolling" feel
+                    pinchStartDist = dist;
 
-                // Apply rotation directly to camera quaternion via Euler
-                // We must be careful not to conflict if PointerLock is active (though rare on mobile)
-                if (!controls.isLocked) {
-                    const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-                    euler.setFromQuaternion(camera.quaternion);
+                } else if (e.touches.length === 1) {
+                    // One finger: Handle Look
+                    const touch = e.touches[0];
+                    const deltaX = touch.clientX - touchLookStart.x;
+                    const deltaY = touch.clientY - touchLookStart.y;
 
-                    euler.y -= deltaX * LOOK_SENSITIVITY;
-                    euler.x -= deltaY * LOOK_SENSITIVITY;
+                    // Apply rotation
+                    if (!controls.isLocked) {
+                        const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+                        euler.setFromQuaternion(camera.quaternion);
 
-                    // Clamp pitch
-                    euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
+                        euler.y -= deltaX * LOOK_SENSITIVITY;
+                        euler.x -= deltaY * LOOK_SENSITIVITY;
+                        euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
 
-                    camera.quaternion.setFromEuler(euler);
+                        camera.quaternion.setFromEuler(euler);
+                    }
+
+                    touchLookStart = { x: touch.clientX, y: touch.clientY };
                 }
-
-                touchLookStart = { x: touch.clientX, y: touch.clientY };
             }, { passive: false });
+
+            // Cleanup on touch end
+            document.body.addEventListener('touchend', (e) => {
+                // If we went from 2 fingers to <2, stop moving
+                if (e.touches.length < 2) {
+                    inputState.fwd = 0;
+                    inputState.back = 0;
+                }
+                
+                // If one finger remains, reset look start to prevent jumping
+                if (e.touches.length === 1) {
+                     const touch = e.touches[0];
+                     touchLookStart = { x: touch.clientX, y: touch.clientY };
+                }
+            });
         }
         
         function showSpeedIndicator() {

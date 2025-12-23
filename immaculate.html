@@ -246,10 +246,13 @@
 
             // Update UI
             const instructions = document.getElementById('instructions');
+            const blocker = document.getElementById('blocker');
+
             instructions.classList.add('interactive');
             
             if (isMobile) {
-                instructions.innerHTML = `<h2>Tap to Start</h2><p>Pinch to Zoom<br>Drag to Pan</p>`;
+                // Direct start for mobile - remove blocker immediately
+                blocker.style.display = 'none';
             } else {
                 instructions.innerHTML = `<h2>Click to Explore</h2><p>W,A,S,D: Fly<br>E,Q: Up/Down<br>Mouse: Look<br>Wheel: Speed</p>`;
             }

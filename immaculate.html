@@ -13,6 +13,7 @@
             background-color: #000;
             user-select: none; /* Prevent text selection on touch */
             -webkit-user-select: none;
+            touch-action: none; /* Critical for custom gestures */
         }
         canvas {
             display: block;
@@ -89,83 +90,9 @@
             pointer-events: none;
             z-index: 10;
         }
-
-        /* --- Touch Controls UI --- */
-        .touch-ui {
-            display: none; /* Shown via JS detection or media query */
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none; /* Let touches pass through to canvas for looking */
-            z-index: 100;
-        }
-
-        /* Joystick */
-        #joystick-zone {
-            position: absolute;
-            bottom: 40px;
-            left: 40px;
-            width: 120px;
-            height: 120px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 2px solid rgba(255, 255, 255, 0.15);
-            border-radius: 50%;
-            pointer-events: auto; /* Catch events */
-            touch-action: none;
-        }
-        #joystick-knob {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 50px;
-            height: 50px;
-            background: rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
-            box-shadow: 0 0 10px rgba(0,0,0,0.3);
-            transition: transform 0.1s; /* Smooth return to center */
-        }
-        #joystick-knob.active {
-            transition: none; /* Instant follow when dragging */
-            background: rgba(255, 255, 255, 0.5);
-        }
-
-        /* Buttons */
-        .button-group {
-            position: absolute;
-            bottom: 40px;
-            right: 40px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            pointer-events: auto;
-        }
-        .touch-btn {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid rgba(255, 255, 255, 0.15);
-            color: white;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 1.5em;
-            touch-action: none;
-            user-select: none;
-            backdrop-filter: blur(4px);
-            transition: background 0.1s;
-        }
-        .touch-btn:active {
-            background: rgba(255, 255, 255, 0.4);
-        }
         
-        /* Show touch controls on touch devices or small screens */
+        /* Mobile specific adjustments */
         @media (hover: none) and (pointer: coarse) {
-            .touch-ui { display: block; }
             #instructions { font-size: 0.8em; }
         }
     </style>
@@ -187,20 +114,6 @@
     <!-- Speed indicator UI element -->
     <div id="speed-indicator">Speed: 400</div>
 
-    <!-- Touch Controls Overlay -->
-    <div class="touch-ui" id="touch-ui">
-        <!-- Virtual Joystick (Left) -->
-        <div id="joystick-zone">
-            <div id="joystick-knob"></div>
-        </div>
-
-        <!-- Action Buttons (Right) -->
-        <div class="button-group">
-            <div class="touch-btn" id="btn-up">↑</div>
-            <div class="touch-btn" id="btn-down">↓</div>
-        </div>
-    </div>
-
     <!-- Import three.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <!-- Import PointerLockControls -->
@@ -209,16 +122,11 @@
 
         let scene, camera, renderer, controls;
         let planeMesh;
+        let isMobile = false;
 
-        // --- Input State ---
-        // We use a unified input state for both Keyboard and Touch
+        // --- Input State (Desktop) ---
         const inputState = {
-            fwd: 0,   // 0 to 1
-            back: 0,  // 0 to 1
-            left: 0,  // 0 to 1
-            right: 0, // 0 to 1
-            up: 0,    // 0 to 1
-            down: 0   // 0 to 1
+            fwd: 0, back: 0, left: 0, right: 0, up: 0, down: 0
         };
 
         let moveSpeed = 400.0;
@@ -226,22 +134,21 @@
         let speedIndicatorTimeout;
         
         // --- Movement Boundaries ---
-        const MIN_DISTANCE = 51;
+        const MIN_DISTANCE = 500; // Increased min distance for 2D view comfort
         const MAX_DISTANCE = 25000;
-
-        // --- Touch State ---
-        let touchLookStart = { x: 0, y: 0 };
-        let touchLookDelta = { x: 0, y: 0 };
-        const LOOK_SENSITIVITY = 0.0025;
 
         function init() {
             // --- Scene Setup ---
             scene = new THREE.Scene();
 
+            // Detect Mobile
+            isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
             // --- Camera Setup ---
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 50, 50000);
-            camera.position.set(-56.3, -7978.9, 4038.7); 
-
+            
+            // Initial position is handled in setupSceneWithTexture now
+            
             // --- Renderer Setup ---
             renderer = new THREE.WebGLRenderer({ 
                 antialias: true,
@@ -295,20 +202,35 @@
             planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
             scene.add(planeMesh);
             
-            setupControls();
-            setupTouchControls(); // Initialize the new touch logic
+            // --- Camera Positioning Based on Device ---
+            if (isMobile) {
+                // Mobile: Center view directly in front of the image
+                // Calculate distance to fit the height
+                const fov = camera.fov * (Math.PI / 180);
+                const height = planeSize / aspectRatio;
+                const distance = Math.abs(height / (2 * Math.tan(fov / 2)));
+                
+                // Start slightly zoomed out
+                camera.position.set(0, 0, distance * 1.2); 
+                camera.lookAt(0, 0, 0);
+            } else {
+                // Desktop: Angled "Fly" view
+                camera.position.set(-56.3, -7978.9, 4038.7); 
+                camera.lookAt(planeMesh.position);
+            }
 
-            camera.lookAt(planeMesh.position);
+            setupControls();
             
+            if (isMobile) {
+                setupDirectTouchControls(); // New direct manipulation controls
+            }
+
             // Update UI
             const instructions = document.getElementById('instructions');
             instructions.classList.add('interactive');
             
-            // Detect if likely mobile to adjust text
-            const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-            if (isTouch) {
-                document.querySelector('.touch-ui').style.display = 'block';
-                instructions.innerHTML = `<h2>Tap to Start</h2><p>Left Stick: Move<br>2 Fingers: Zoom<br>Buttons: Up/Down</p>`;
+            if (isMobile) {
+                instructions.innerHTML = `<h2>Tap to Start</h2><p>1 Finger: Pan<br>2 Fingers: Zoom & Pan</p>`;
             } else {
                 instructions.innerHTML = `<h2>Click to Explore</h2><p>W,A,S,D: Fly<br>E,Q: Up/Down<br>Mouse: Look<br>Wheel: Speed</p>`;
             }
@@ -320,15 +242,11 @@
             const blocker = document.getElementById('blocker');
             const instructions = document.getElementById('instructions');
             
-            // On Click/Tap of the overlay
             instructions.addEventListener('click', () => {
                 if(instructions.classList.contains('interactive')) {
-                    // Only use PointerLock on non-touch devices
-                    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-                    if (!isTouch) {
+                    if (!isMobile) {
                         controls.lock();
                     } else {
-                        // For touch, just hide the blocker
                         blocker.style.display = 'none';
                     }
                 }
@@ -339,7 +257,7 @@
 
             scene.add(controls.getObject());
 
-            // Keyboard Listeners
+            // Keyboard Listeners (Desktop Only)
             const onKey = (event, isDown) => {
                 const val = isDown ? 1 : 0;
                 switch (event.code) {
@@ -363,175 +281,98 @@
             });
         }
 
-        // --- NEW: Touch Control Logic ---
-        function setupTouchControls() {
-            const joystickZone = document.getElementById('joystick-zone');
-            const joystickKnob = document.getElementById('joystick-knob');
-            const btnUp = document.getElementById('btn-up');
-            const btnDown = document.getElementById('btn-down');
+        // --- NEW: Powerful Direct Touch Controls (2D Viewer Mode) ---
+        function setupDirectTouchControls() {
+            let lastTouchX = 0;
+            let lastTouchY = 0;
+            let lastDist = 0;
+            let isTouching = false;
 
-            // --- Joystick Logic ---
-            let joystickCenter = { x: 0, y: 0 };
-            let joystickTouchId = null;
+            const getDistance = (t1, t2) => {
+                const dx = t1.clientX - t2.clientX;
+                const dy = t1.clientY - t2.clientY;
+                return Math.sqrt(dx * dx + dy * dy);
+            };
 
-            joystickZone.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                const touch = e.changedTouches[0];
-                joystickTouchId = touch.identifier;
-                
-                const rect = joystickZone.getBoundingClientRect();
-                joystickCenter = { 
-                    x: rect.left + rect.width / 2, 
-                    y: rect.top + rect.height / 2 
+            const getCenter = (t1, t2) => {
+                return {
+                    x: (t1.clientX + t2.clientX) / 2,
+                    y: (t1.clientY + t2.clientY) / 2
                 };
-                joystickKnob.classList.add('active');
-                updateJoystick(touch);
-            }, { passive: false });
-
-            joystickZone.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                for (let i = 0; i < e.changedTouches.length; i++) {
-                    if (e.changedTouches[i].identifier === joystickTouchId) {
-                        updateJoystick(e.changedTouches[i]);
-                        break;
-                    }
-                }
-            }, { passive: false });
-
-            const endJoystick = (e) => {
-                e.preventDefault();
-                for (let i = 0; i < e.changedTouches.length; i++) {
-                    if (e.changedTouches[i].identifier === joystickTouchId) {
-                        joystickTouchId = null;
-                        joystickKnob.style.transform = `translate(-50%, -50%)`;
-                        joystickKnob.classList.remove('active');
-                        // Reset move inputs
-                        inputState.fwd = 0;
-                        inputState.back = 0;
-                        inputState.left = 0;
-                        inputState.right = 0;
-                        break;
-                    }
-                }
             };
-            joystickZone.addEventListener('touchend', endJoystick);
-            joystickZone.addEventListener('touchcancel', endJoystick);
-
-            function updateJoystick(touch) {
-                const maxDist = 60; // Max radius of joystick
-                let dx = touch.clientX - joystickCenter.x;
-                let dy = touch.clientY - joystickCenter.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
-                
-                // Clamp visual knob
-                if (dist > maxDist) {
-                    const ratio = maxDist / dist;
-                    dx *= ratio;
-                    dy *= ratio;
-                }
-                
-                joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-
-                // Map to inputs (-1 to 1)
-                const normX = dx / maxDist;
-                const normY = dy / maxDist;
-
-                // Threshold to avoid drift
-                const threshold = 0.2;
-                
-                if (normY < -threshold) inputState.fwd = Math.abs(normY); else inputState.fwd = 0;
-                if (normY > threshold) inputState.back = Math.abs(normY); else inputState.back = 0;
-                if (normX < -threshold) inputState.left = Math.abs(normX); else inputState.left = 0;
-                if (normX > threshold) inputState.right = Math.abs(normX); else inputState.right = 0;
-            }
-
-            // --- Button Logic ---
-            const bindBtn = (elem, type) => {
-                elem.addEventListener('touchstart', (e) => { e.preventDefault(); inputState[type] = 1; });
-                elem.addEventListener('touchend', (e) => { e.preventDefault(); inputState[type] = 0; });
-            };
-            bindBtn(btnUp, 'up');
-            bindBtn(btnDown, 'down');
-
-            // --- Touch Look & Pinch Logic ---
-            let pinchStartDist = 0;
 
             document.body.addEventListener('touchstart', (e) => {
-                if (e.target.closest('#joystick-zone') || e.target.closest('.touch-btn')) return;
+                e.preventDefault();
+                isTouching = true;
 
-                if (e.touches.length === 2) {
-                     // Two fingers: Start Pinch
-                     const dx = e.touches[0].clientX - e.touches[1].clientX;
-                     const dy = e.touches[0].clientY - e.touches[1].clientY;
-                     pinchStartDist = Math.sqrt(dx * dx + dy * dy);
-                } else if (e.touches.length === 1) {
-                     // One finger: Start Look
-                     const touch = e.touches[0];
-                     touchLookStart = { x: touch.clientX, y: touch.clientY };
+                if (e.touches.length === 1) {
+                    lastTouchX = e.touches[0].clientX;
+                    lastTouchY = e.touches[0].clientY;
+                } else if (e.touches.length === 2) {
+                    lastDist = getDistance(e.touches[0], e.touches[1]);
+                    const center = getCenter(e.touches[0], e.touches[1]);
+                    lastTouchX = center.x;
+                    lastTouchY = center.y;
                 }
             }, { passive: false });
 
             document.body.addEventListener('touchmove', (e) => {
-                if (e.target.closest('#joystick-zone') || e.target.closest('.touch-btn')) return;
-                
-                if(e.cancelable) e.preventDefault();
+                if (!isTouching) return;
+                e.preventDefault();
 
-                if (e.touches.length === 2) {
-                    // Two fingers: Handle Pinch (Move Forward/Back)
-                    const dx = e.touches[0].clientX - e.touches[1].clientX;
-                    const dy = e.touches[0].clientY - e.touches[1].clientY;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    
-                    const diff = dist - pinchStartDist;
-                    
-                    // Sensitivity: convert pixel distance change to movement speed
-                    const sensitivity = 0.05; 
-                    
-                    if (diff > 0) {
-                        inputState.fwd = Math.min(1, diff * sensitivity);
-                        inputState.back = 0;
-                    } else {
-                        inputState.back = Math.min(1, -diff * sensitivity);
-                        inputState.fwd = 0;
-                    }
-                    
-                    // Update start dist to create "scrolling" feel
-                    pinchStartDist = dist;
+                // Dynamic Pan Speed: Faster when zoomed out (high Z), Slower when zoomed in (low Z)
+                // Normalize Z against a base value (e.g. 5000)
+                const zoomLevel = Math.max(0.2, camera.position.z / 5000); 
+                const panSpeed = 6.0 * zoomLevel; // Base multiplier
+                const zoomSpeed = 8.0 * zoomLevel; // Powerful zoom multiplier
 
-                } else if (e.touches.length === 1) {
-                    // One finger: Handle Look
+                if (e.touches.length === 1) {
+                    // --- 1 Finger: Pan ---
                     const touch = e.touches[0];
-                    const deltaX = touch.clientX - touchLookStart.x;
-                    const deltaY = touch.clientY - touchLookStart.y;
+                    const dx = touch.clientX - lastTouchX;
+                    const dy = touch.clientY - lastTouchY;
 
-                    // Apply rotation
-                    if (!controls.isLocked) {
-                        const euler = new THREE.Euler(0, 0, 0, 'YXZ');
-                        euler.setFromQuaternion(camera.quaternion);
+                    camera.position.x -= dx * panSpeed;
+                    camera.position.y += dy * panSpeed;
 
-                        euler.y -= deltaX * LOOK_SENSITIVITY;
-                        euler.x -= deltaY * LOOK_SENSITIVITY;
-                        euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
+                    lastTouchX = touch.clientX;
+                    lastTouchY = touch.clientY;
 
-                        camera.quaternion.setFromEuler(euler);
-                    }
+                } else if (e.touches.length === 2) {
+                    // --- 2 Fingers: Pinch Zoom & Pan ---
+                    const dist = getDistance(e.touches[0], e.touches[1]);
+                    const center = getCenter(e.touches[0], e.touches[1]);
 
-                    touchLookStart = { x: touch.clientX, y: touch.clientY };
+                    // Zoom Logic (Powerful)
+                    const distChange = dist - lastDist;
+                    
+                    // Move camera Z directly
+                    let newZ = camera.position.z - (distChange * zoomSpeed);
+                    
+                    // Clamp Z
+                    newZ = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, newZ));
+                    camera.position.z = newZ;
+
+                    // Pan Logic (while zooming)
+                    const dx = center.x - lastTouchX;
+                    const dy = center.y - lastTouchY;
+
+                    camera.position.x -= dx * panSpeed;
+                    camera.position.y += dy * panSpeed;
+
+                    lastDist = dist;
+                    lastTouchX = center.x;
+                    lastTouchY = center.y;
                 }
             }, { passive: false });
 
-            // Cleanup on touch end
             document.body.addEventListener('touchend', (e) => {
-                // If we went from 2 fingers to <2, stop moving
-                if (e.touches.length < 2) {
-                    inputState.fwd = 0;
-                    inputState.back = 0;
-                }
-                
-                // If one finger remains, reset look start to prevent jumping
-                if (e.touches.length === 1) {
-                     const touch = e.touches[0];
-                     touchLookStart = { x: touch.clientX, y: touch.clientY };
+                if (e.touches.length === 0) {
+                    isTouching = false;
+                } else if (e.touches.length === 1) {
+                    // Reset anchor for single touch to prevent jumping
+                    lastTouchX = e.touches[0].clientX;
+                    lastTouchY = e.touches[0].clientY;
                 }
             });
         }
@@ -560,17 +401,18 @@
         function animate() {
             requestAnimationFrame(animate);
 
+            // On Mobile, we skip the physics loop entirely because movement 
+            // is handled directly by touch events (1:1 mapping).
+            // We only run this loop for Desktop (PointerLock).
+            if (isMobile) {
+                renderer.render(scene, camera);
+                return;
+            }
+
             const time = performance.now();
             const delta = (time - prevTime) / 1000;
             
-            // Check if controls are active (Locked OR Touch UI visible/active)
-            const isTouchActive = document.querySelector('.touch-ui').style.display !== 'none';
-            
-            // We process movement if locked OR if we are in touch mode and the blocker is hidden
-            // FIX: Check if controls exist before checking isLocked
-            const canMove = controls && (controls.isLocked || (isTouchActive && document.getElementById('blocker').style.display === 'none'));
-
-            if (canMove) {
+            if (controls && controls.isLocked) {
                 const moveDistance = moveSpeed * delta;
                 
                 camera.getWorldDirection(forwardVector);
@@ -578,12 +420,10 @@
 
                 moveVector.set(0,0,0);
                 
-                // Combine Keyboard (0/1) and Touch (0.0-1.0) inputs
-                // Using max ensures either works
-                if (inputState.fwd > 0) moveVector.addScaledVector(forwardVector, inputState.fwd);
-                if (inputState.back > 0) moveVector.addScaledVector(forwardVector, -inputState.back);
-                if (inputState.right > 0) moveVector.addScaledVector(rightVector, inputState.right);
-                if (inputState.left > 0) moveVector.addScaledVector(rightVector, -inputState.left);
+                if (inputState.fwd > 0) moveVector.addScaledVector(forwardVector, 1);
+                if (inputState.back > 0) moveVector.addScaledVector(forwardVector, -1);
+                if (inputState.right > 0) moveVector.addScaledVector(rightVector, 1);
+                if (inputState.left > 0) moveVector.addScaledVector(rightVector, -1);
 
                 if (moveVector.lengthSq() > 0) {
                     moveVector.normalize();
@@ -591,11 +431,9 @@
 
                 nextPosition.copy(camera.position).addScaledVector(moveVector, moveDistance);
 
-                // Vertical movement
-                if (inputState.up > 0) nextPosition.y += moveDistance * inputState.up;
-                if (inputState.down > 0) nextPosition.y -= moveDistance * inputState.down;
+                if (inputState.up > 0) nextPosition.y += moveDistance;
+                if (inputState.down > 0) nextPosition.y -= moveDistance;
 
-                // Boundary Check
                 if (planeMesh) {
                     const nextDist = nextPosition.distanceTo(planeMesh.position);
                     if (nextDist > MIN_DISTANCE && nextDist < MAX_DISTANCE) {

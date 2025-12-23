@@ -123,6 +123,9 @@
         let scene, camera, renderer, controls;
         let planeMesh;
         let isMobile = false;
+        
+        // Orthographic camera helper variables
+        let orthoWidth, orthoHeight;
 
         // --- Input State (Desktop) ---
         const inputState = {
@@ -133,8 +136,7 @@
         let prevTime = performance.now();
         let speedIndicatorTimeout;
         
-        // --- Movement Boundaries ---
-        const MIN_DISTANCE = 500; // Increased min distance for 2D view comfort
+        const MIN_DISTANCE = 500;
         const MAX_DISTANCE = 25000;
 
         function init() {
@@ -145,9 +147,16 @@
             isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
             // --- Camera Setup ---
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 50, 50000);
-            
-            // Initial position is handled in setupSceneWithTexture now
+            if (isMobile) {
+                // Mobile: Orthographic Camera for true 2D
+                // We will set bounds correctly in setupSceneWithTexture
+                camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 10000);
+                camera.position.set(0, 0, 1000);
+            } else {
+                // Desktop: Perspective Camera for 3D flight
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 50, 50000);
+                camera.position.set(-56.3, -7978.9, 4038.7); 
+            }
             
             // --- Renderer Setup ---
             renderer = new THREE.WebGLRenderer({ 
@@ -202,27 +211,37 @@
             planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
             scene.add(planeMesh);
             
-            // --- Camera Positioning Based on Device ---
+            // --- Mobile 2D Setup ---
             if (isMobile) {
-                // Mobile: Center view directly in front of the image
-                // Calculate distance to fit the height
-                const fov = camera.fov * (Math.PI / 180);
-                const height = planeSize / aspectRatio;
-                const distance = Math.abs(height / (2 * Math.tan(fov / 2)));
+                // Setup Orthographic bounds to fit the image height initially
+                const planeHeight = planeSize / aspectRatio;
+                const winAspect = window.innerWidth / window.innerHeight;
                 
-                // Start slightly zoomed out
-                camera.position.set(0, 0, distance * 1.2); 
+                // Set the camera view height to match the plane height + some padding
+                const viewHeight = planeHeight * 1.2;
+                const viewWidth = viewHeight * winAspect;
+                
+                camera.left = -viewWidth / 2;
+                camera.right = viewWidth / 2;
+                camera.top = viewHeight / 2;
+                camera.bottom = -viewHeight / 2;
+                
+                camera.updateProjectionMatrix();
+                
+                // Store initial frustum dimensions for zoom logic
+                orthoHeight = viewHeight; 
+                orthoWidth = viewWidth;
+
+                // Center perfectly
+                camera.position.set(0, 0, 1000);
                 camera.lookAt(0, 0, 0);
             } else {
-                // Desktop: Angled "Fly" view
-                camera.position.set(-56.3, -7978.9, 4038.7); 
                 camera.lookAt(planeMesh.position);
+                setupControls();
             }
-
-            setupControls();
             
             if (isMobile) {
-                setupDirectTouchControls(); // New direct manipulation controls
+                setupDirectTouchControls(); 
             }
 
             // Update UI
@@ -230,7 +249,7 @@
             instructions.classList.add('interactive');
             
             if (isMobile) {
-                instructions.innerHTML = `<h2>Tap to Start</h2><p>1 Finger: Pan<br>2 Fingers: Zoom & Pan</p>`;
+                instructions.innerHTML = `<h2>Tap to Start</h2><p>Pinch to Zoom<br>Drag to Pan</p>`;
             } else {
                 instructions.innerHTML = `<h2>Click to Explore</h2><p>W,A,S,D: Fly<br>E,Q: Up/Down<br>Mouse: Look<br>Wheel: Speed</p>`;
             }
@@ -281,11 +300,12 @@
             });
         }
 
-        // --- NEW: Powerful Direct Touch Controls (2D Viewer Mode) ---
+        // --- 1:1 Direct Touch Controls (Orthographic 2D) ---
         function setupDirectTouchControls() {
             let lastTouchX = 0;
             let lastTouchY = 0;
-            let lastDist = 0;
+            let startDist = 0;
+            let startZoom = 1;
             let isTouching = false;
 
             const getDistance = (t1, t2) => {
@@ -309,7 +329,9 @@
                     lastTouchX = e.touches[0].clientX;
                     lastTouchY = e.touches[0].clientY;
                 } else if (e.touches.length === 2) {
-                    lastDist = getDistance(e.touches[0], e.touches[1]);
+                    startDist = getDistance(e.touches[0], e.touches[1]);
+                    startZoom = camera.zoom;
+                    
                     const center = getCenter(e.touches[0], e.touches[1]);
                     lastTouchX = center.x;
                     lastTouchY = center.y;
@@ -320,47 +342,48 @@
                 if (!isTouching) return;
                 e.preventDefault();
 
-                // Dynamic Pan Speed: Faster when zoomed out (high Z), Slower when zoomed in (low Z)
-                // Normalize Z against a base value (e.g. 5000)
-                const zoomLevel = Math.max(0.2, camera.position.z / 5000); 
-                const panSpeed = 6.0 * zoomLevel; // Base multiplier
-                const zoomSpeed = 8.0 * zoomLevel; // Powerful zoom multiplier
-
                 if (e.touches.length === 1) {
                     // --- 1 Finger: Pan ---
                     const touch = e.touches[0];
                     const dx = touch.clientX - lastTouchX;
                     const dy = touch.clientY - lastTouchY;
 
-                    camera.position.x -= dx * panSpeed;
-                    camera.position.y += dy * panSpeed;
+                    // Calculate World Unit per Screen Pixel ratio
+                    // Visible World Height = (Top - Bottom) / Zoom
+                    const visibleHeight = (camera.top - camera.bottom) / camera.zoom;
+                    const ratio = visibleHeight / window.innerHeight;
+
+                    camera.position.x -= dx * ratio;
+                    camera.position.y += dy * ratio;
 
                     lastTouchX = touch.clientX;
                     lastTouchY = touch.clientY;
 
                 } else if (e.touches.length === 2) {
-                    // --- 2 Fingers: Pinch Zoom & Pan ---
+                    // --- 2 Fingers: Zoom & Pan ---
                     const dist = getDistance(e.touches[0], e.touches[1]);
                     const center = getCenter(e.touches[0], e.touches[1]);
 
-                    // Zoom Logic (Powerful)
-                    const distChange = dist - lastDist;
+                    // NATIVE ZOOM FEEL: NewDistance / OldDistance
+                    const zoomScale = dist / startDist;
+                    let newZoom = startZoom * zoomScale;
                     
-                    // Move camera Z directly
-                    let newZ = camera.position.z - (distChange * zoomSpeed);
+                    // Clamp Zoom (Min 0.1x, Max 50x)
+                    newZoom = Math.max(0.1, Math.min(50, newZoom));
                     
-                    // Clamp Z
-                    newZ = Math.max(MIN_DISTANCE, Math.min(MAX_DISTANCE, newZ));
-                    camera.position.z = newZ;
+                    camera.zoom = newZoom;
+                    camera.updateProjectionMatrix();
 
-                    // Pan Logic (while zooming)
+                    // PAN Logic (Stick to fingers)
                     const dx = center.x - lastTouchX;
                     const dy = center.y - lastTouchY;
+                    
+                    const visibleHeight = (camera.top - camera.bottom) / camera.zoom;
+                    const ratio = visibleHeight / window.innerHeight;
 
-                    camera.position.x -= dx * panSpeed;
-                    camera.position.y += dy * panSpeed;
+                    camera.position.x -= dx * ratio;
+                    camera.position.y += dy * ratio;
 
-                    lastDist = dist;
                     lastTouchX = center.x;
                     lastTouchY = center.y;
                 }
@@ -370,7 +393,6 @@
                 if (e.touches.length === 0) {
                     isTouching = false;
                 } else if (e.touches.length === 1) {
-                    // Reset anchor for single touch to prevent jumping
                     lastTouchX = e.touches[0].clientX;
                     lastTouchY = e.touches[0].clientY;
                 }
@@ -388,8 +410,23 @@
         }
 
         function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
+            if (isMobile) {
+                // Update Orthographic Frustum
+                const aspect = window.innerWidth / window.innerHeight;
+                // Keep height constant, adjust width
+                const height = (camera.top - camera.bottom);
+                const width = height * aspect;
+                
+                camera.left = -width / 2;
+                camera.right = width / 2;
+                camera.top = height / 2;
+                camera.bottom = -height / 2;
+                
+                camera.updateProjectionMatrix();
+            } else {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+            }
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
@@ -401,9 +438,8 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // On Mobile, we skip the physics loop entirely because movement 
-            // is handled directly by touch events (1:1 mapping).
-            // We only run this loop for Desktop (PointerLock).
+            // On Mobile, we skip the physics loop completely.
+            // Movement is 100% event-driven by fingers.
             if (isMobile) {
                 renderer.render(scene, camera);
                 return;

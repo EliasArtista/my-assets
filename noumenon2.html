@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>3D Image Plane Explorer</title>
     <style>
         /* Basic styles to make the canvas fill the page */
@@ -11,22 +11,32 @@
             overflow: hidden;
             font-family: sans-serif;
             background-color: #000; /* Fallback for a black background */
+            user-select: none; /* Prevent text selection on touch */
+            -webkit-user-select: none;
+            touch-action: none; /* Critical for custom gestures */
         }
         canvas {
             display: block;
             cursor: pointer;
         }
-        /* Styling for the background video */
+
+        /* Styling for the background video - Robust Centering & Covering */
         #bg-video {
             position: fixed;
-            right: 0;
-            bottom: 0;
+            top: 50%;
+            left: 50%;
+            /* These 4 lines ensure the video covers the screen without stretching */
             min-width: 100%;
             min-height: 100%;
+            width: auto;
+            height: auto;
+            
+            transform: translate(-50%, -50%);
             z-index: -100;
             opacity: 0.15; /* Set opacity to 15% */
-            object-fit: cover; /* This will cover the area, maintaining aspect ratio */
+            object-fit: cover; /* Modern fallback to ensure coverage */
         }
+
         /* Styling for the instruction overlay */
         #blocker {
             position: absolute;
@@ -36,6 +46,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            z-index: 2000;
         }
         #instructions {
             width: 80%;
@@ -46,9 +57,13 @@
             text-align: center;
             color: #333;
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
         }
         #instructions.interactive {
             cursor: pointer;
+        }
+        #instructions.interactive:hover {
+            transform: scale(1.02);
         }
         #instructions h2 {
             margin-top: 0;
@@ -57,7 +72,9 @@
         #instructions p {
             font-size: 0.9em; 
             line-height: 1.4;
+            margin-bottom: 0;
         }
+
         /* Styling for the speed indicator */
         #speed-indicator {
             position: absolute;
@@ -70,12 +87,14 @@
             font-size: 1em;
             opacity: 0;
             transition: opacity 0.5s ease-in-out;
+            pointer-events: none;
+            z-index: 10;
         }
     </style>
 </head>
 <body>
     <!-- Background Video -->
-    <video autoplay muted loop id="bg-video">
+    <video autoplay muted loop id="bg-video" playsinline>
         <source src="https://video.wixstatic.com/video/0b59fa_8d9de5e8d87e4535b01bfc7c4521cd46/1080p/mp4/file.mp4" type="video/mp4">
     </video>
 
@@ -98,6 +117,7 @@
 
         let scene, camera, renderer, controls;
         let planeMesh;
+        let isMobile = false;
 
         // --- Control State Variables ---
         let moveSpeed = 400.0;
@@ -115,17 +135,27 @@
             // --- Scene Setup ---
             scene = new THREE.Scene();
 
+            // Detect Mobile
+            isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
             // --- Camera Setup ---
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 50, 50000);
-            camera.position.set(-56.3, -7978.9, 4038.7); 
+            if (isMobile) {
+                // Mobile: Orthographic Camera for true 2D
+                camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 10000);
+                camera.position.set(0, 0, 1000);
+            } else {
+                // Desktop: Perspective Camera for 3D flight
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 50, 50000);
+                camera.position.set(-56.3, -7978.9, 4038.7); 
+            }
 
             // --- Renderer Setup ---
             renderer = new THREE.WebGLRenderer({ 
                 antialias: true,
                 alpha: true 
             });
-            // --- SUPER-SAMPLING ANTI-ALIASING ---
-            renderer.setPixelRatio(2); 
+            // Optimization: Use default pixel ratio on mobile for performance, 2 on desktop
+            renderer.setPixelRatio(isMobile ? window.devicePixelRatio : 2); 
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(0x000000, 0); 
             document.body.appendChild(renderer.domElement);
@@ -168,7 +198,11 @@
             texture.needsUpdate = true;
 
             const planeSize = 10000;
-            const aspectRatio = texture.image ? texture.image.width / texture.image.height : 1;
+            // Ensure we use the natural aspect ratio of the loaded image to prevent squashing
+            const aspectRatio = (texture.image && texture.image.width && texture.image.height) 
+                ? texture.image.width / texture.image.height 
+                : 1;
+
             const planeGeometry = new THREE.PlaneGeometry(planeSize, planeSize / aspectRatio);
             
             const planeMaterial = new THREE.MeshBasicMaterial({ 
@@ -179,16 +213,45 @@
             planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
             scene.add(planeMesh);
             
-            // --- Controls Setup (Now that the plane exists) ---
-            setupControls();
+            // --- Mobile 2D Setup ---
+            if (isMobile) {
+                // Setup Orthographic bounds to fit the image height initially
+                const planeHeight = planeSize / aspectRatio;
+                const winAspect = window.innerWidth / window.innerHeight;
+                
+                // Set the camera view height to match the plane height + padding
+                const viewHeight = planeHeight * 1.2;
+                const viewWidth = viewHeight * winAspect;
+                
+                camera.left = -viewWidth / 2;
+                camera.right = viewWidth / 2;
+                camera.top = viewHeight / 2;
+                camera.bottom = -viewHeight / 2;
+                
+                camera.updateProjectionMatrix();
+                
+                // Center perfectly
+                camera.position.set(0, 0, 1000);
+                camera.lookAt(0, 0, 0);
 
-            // Aim the camera AFTER the plane and controls are fully set up.
-            camera.lookAt(planeMesh.position);
+                setupDirectTouchControls();
+            } else {
+                // Aim the camera AFTER the plane and controls are fully set up.
+                camera.lookAt(planeMesh.position);
+                setupControls();
+            }
             
             // Update UI to be interactive
             const instructions = document.getElementById('instructions');
+            const blocker = document.getElementById('blocker');
+
             instructions.classList.add('interactive');
-            instructions.innerHTML = `<h2>Click to Explore</h2><p>W,A,S,D: Fly<br>E,Q: Up/Down<br>Mouse: Look<br>Wheel: Speed</p><p style="margin-top: 10px; font-size: 0.8em;">(ESC to release)</p>`;
+            
+            if (isMobile) {
+                blocker.style.display = 'none';
+            } else {
+                instructions.innerHTML = `<h2>Click to Explore</h2><p>W,A,S,D: Fly<br>E,Q: Up/Down<br>Mouse: Look<br>Wheel: Speed</p><p style="margin-top: 10px; font-size: 0.8em;">(ESC to release)</p>`;
+            }
         }
 
         function setupControls() {
@@ -199,7 +262,7 @@
             
             instructions.addEventListener('click', () => {
                 if(instructions.classList.contains('interactive')) {
-                    controls.lock();
+                    if (!isMobile) controls.lock();
                 }
             });
 
@@ -234,6 +297,100 @@
             });
         }
         
+        // --- 1:1 Direct Touch Controls (Orthographic 2D) ---
+        function setupDirectTouchControls() {
+            let lastTouchX = 0;
+            let lastTouchY = 0;
+            let startDist = 0;
+            let startZoom = 1;
+            let isTouching = false;
+
+            const getDistance = (t1, t2) => {
+                const dx = t1.clientX - t2.clientX;
+                const dy = t1.clientY - t2.clientY;
+                return Math.sqrt(dx * dx + dy * dy);
+            };
+
+            const getCenter = (t1, t2) => {
+                return {
+                    x: (t1.clientX + t2.clientX) / 2,
+                    y: (t1.clientY + t2.clientY) / 2
+                };
+            };
+
+            document.body.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                isTouching = true;
+
+                if (e.touches.length === 1) {
+                    lastTouchX = e.touches[0].clientX;
+                    lastTouchY = e.touches[0].clientY;
+                } else if (e.touches.length === 2) {
+                    startDist = getDistance(e.touches[0], e.touches[1]);
+                    startZoom = camera.zoom;
+                    
+                    const center = getCenter(e.touches[0], e.touches[1]);
+                    lastTouchX = center.x;
+                    lastTouchY = center.y;
+                }
+            }, { passive: false });
+
+            document.body.addEventListener('touchmove', (e) => {
+                if (!isTouching) return;
+                e.preventDefault();
+
+                if (e.touches.length === 1) {
+                    // --- 1 Finger: Pan ---
+                    const touch = e.touches[0];
+                    const dx = touch.clientX - lastTouchX;
+                    const dy = touch.clientY - lastTouchY;
+
+                    // Calculate World Unit per Screen Pixel ratio
+                    const visibleHeight = (camera.top - camera.bottom) / camera.zoom;
+                    const ratio = visibleHeight / window.innerHeight;
+
+                    camera.position.x -= dx * ratio;
+                    camera.position.y += dy * ratio;
+
+                    lastTouchX = touch.clientX;
+                    lastTouchY = touch.clientY;
+
+                } else if (e.touches.length === 2) {
+                    // --- 2 Fingers: Zoom & Pan ---
+                    const dist = getDistance(e.touches[0], e.touches[1]);
+                    const center = getCenter(e.touches[0], e.touches[1]);
+
+                    const zoomScale = dist / startDist;
+                    let newZoom = startZoom * zoomScale;
+                    newZoom = Math.max(0.1, Math.min(50, newZoom));
+                    
+                    camera.zoom = newZoom;
+                    camera.updateProjectionMatrix();
+
+                    const dx = center.x - lastTouchX;
+                    const dy = center.y - lastTouchY;
+                    
+                    const visibleHeight = (camera.top - camera.bottom) / camera.zoom;
+                    const ratio = visibleHeight / window.innerHeight;
+
+                    camera.position.x -= dx * ratio;
+                    camera.position.y += dy * ratio;
+
+                    lastTouchX = center.x;
+                    lastTouchY = center.y;
+                }
+            }, { passive: false });
+
+            document.body.addEventListener('touchend', (e) => {
+                if (e.touches.length === 0) {
+                    isTouching = false;
+                } else if (e.touches.length === 1) {
+                    lastTouchX = e.touches[0].clientX;
+                    lastTouchY = e.touches[0].clientY;
+                }
+            });
+        }
+        
         function showSpeedIndicator() {
             const speedIndicator = document.getElementById('speed-indicator');
             speedIndicator.textContent = `Speed: ${Math.round(moveSpeed)}`;
@@ -245,8 +402,21 @@
         }
 
         function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
+            if (isMobile) {
+                // Update Orthographic Frustum
+                const aspect = window.innerWidth / window.innerHeight;
+                const height = (camera.top - camera.bottom);
+                const width = height * aspect;
+                
+                camera.left = -width / 2;
+                camera.right = width / 2;
+                camera.top = height / 2;
+                camera.bottom = -height / 2;
+                camera.updateProjectionMatrix();
+            } else {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+            }
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
@@ -258,6 +428,12 @@
 
         function animate() {
             requestAnimationFrame(animate);
+
+            // On Mobile, render only (touch events handle movement)
+            if (isMobile) {
+                renderer.render(scene, camera);
+                return;
+            }
 
             const time = performance.now();
             const delta = (time - prevTime) / 1000;

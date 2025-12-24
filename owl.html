@@ -20,16 +20,21 @@
             cursor: pointer;
         }
 
-        /* Styling for the background video - Centered and Covering */
+        /* Styling for the background video - Robust Centering & Covering */
         #bg-video {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 50%;
+            left: 50%;
+            /* These 4 lines ensure the video covers the screen without stretching */
+            min-width: 100%;
+            min-height: 100%;
+            width: auto;
+            height: auto;
+            
+            transform: translate(-50%, -50%);
             z-index: -100;
             opacity: 0.15; /* Preserved opacity */
-            object-fit: cover; /* Ensures it fills screen */
+            object-fit: cover; /* Modern fallback to ensure coverage */
         }
 
         /* Styling for the instruction overlay */
@@ -193,7 +198,11 @@
             texture.needsUpdate = true;
 
             const planeSize = 10000;
-            const aspectRatio = texture.image ? texture.image.width / texture.image.height : 1;
+            // Ensure we use the natural aspect ratio of the loaded image to prevent squashing
+            const aspectRatio = (texture.image && texture.image.width && texture.image.height) 
+                ? texture.image.width / texture.image.height 
+                : 1;
+
             const planeGeometry = new THREE.PlaneGeometry(planeSize, planeSize / aspectRatio);
             
             const planeMaterial = new THREE.MeshBasicMaterial({ 

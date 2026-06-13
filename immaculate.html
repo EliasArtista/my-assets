@@ -5,10 +5,10 @@
   <title>3D Image Plane Explorer - Digital Glitch Edition</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <!-- Tailwind CSS Play CDN -->
+  <!-- Tailwind CSS Content Delivery Network -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- Google Fonts -->
+  <!-- Premium Typography Integration -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@300;400;500&display=swap" rel="stylesheet">
@@ -28,7 +28,7 @@
 </head>
 <body class="relative w-screen h-screen overflow-hidden bg-black select-none">
 
-  <!-- Background Video Overlay (Comfortable 12% opacity) -->
+  <!-- Background Video Overlay (Dimmed at comfortable low opacity level to support eye-safe ambient tone) -->
   <video
     id="bg-video"
     autoplay
@@ -45,15 +45,15 @@
     <canvas id="three-canvas" class="w-full h-full block"></canvas>
   </div>
 
-  <!-- HUD Speed Toast Notification -->
+  <!-- HUD Speed Toast notification -->
   <div
     id="speed-indicator"
-    class="absolute top-5 left-1/2 -translate-x-1/2 bg-black/75 border border-white/5 backdrop-blur-[10px] text-zinc-350 px-5 py-2.5 rounded-[24px] font-mono text-xs pointer-events-none transition-opacity duration-500 z-30 font-medium tracking-widest uppercase shadow-[0_4px_12px_rgba(0,0,0,0.5)] opacity-0"
+    class="absolute top-5 left-1/2 -translate-x-1/2 bg-black/75 border border-white/5 backdrop-blur-[10px] text-zinc-300 px-5 py-2.5 rounded-[24px] font-mono text-xs pointer-events-none transition-opacity duration-500 z-30 font-medium tracking-widest uppercase shadow-[0_4px_12px_rgba(0,0,0,0.5)] opacity-0"
   >
     Speed: <span id="speed-value">400</span>
   </div>
 
-  <!-- Blocker & Instructions Mask Screen -->
+  <!-- Blocker & Instructions Window / Loader Overlay panel -->
   <div
     id="blocker"
     class="absolute inset-0 bg-black/60 z-50 flex justify-center items-center cursor-pointer transition-opacity duration-300"
@@ -62,14 +62,14 @@
       id="instructions"
       class="w-[80%] max-w-[250px] p-5 bg-[#0e0e0e]/95 backdrop-blur-[12px] border border-white/10 rounded-2xl text-center text-white shadow-[0_12px_40px_rgba(0,0,0,0.8)] hover:scale-[1.02] transition-transform duration-200"
     >
-      <!-- Loading State Indicator -->
+      <!-- Sub-module: Loader Screen -->
       <div id="loader-content" class="flex flex-col items-center justify-center">
         <div class="w-5 h-5 border-2 border-t-white border-r-transparent border-b-white border-l-transparent rounded-full animate-spin mb-2"></div>
         <h2 class="text-xs font-light tracking-widest uppercase mb-1 font-mono text-zinc-300">Loading...</h2>
         <p class="text-[10px] leading-relaxed text-zinc-500">Please wait.</p>
       </div>
 
-      <!-- Controls Screen -->
+      <!-- Sub-module: Control Instructions -->
       <div id="explore-content" class="hidden">
         <h2 class="text-sm font-light tracking-widest uppercase mb-2.5 font-mono text-zinc-300">Click to Explore</h2>
         <p class="text-[10px] leading-relaxed text-zinc-400 select-none text-center">
@@ -82,7 +82,7 @@
     </div>
   </div>
 
-  <!-- Import Map Configuration (Fetch ThreeJS modular dependencies) -->
+  <!-- System Import Maps to fetch modular Three.JS CDN directly -->
   <script type="importmap">
     {
       "imports": {
@@ -92,6 +92,7 @@
     }
   </script>
 
+  <!-- Core Standalone Application Script Block -->
   <script type="module">
     import * as THREE from 'three';
     import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
@@ -99,9 +100,11 @@
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
+    // Core Constants for range bounds
     const MIN_DISTANCE = 2;
     const MAX_DISTANCE = 150000;
 
+    // Dom elements
     const canvas = document.getElementById('three-canvas');
     const container = document.getElementById('canvas-container');
     const blocker = document.getElementById('blocker');
@@ -110,12 +113,15 @@
     const speedIndicator = document.getElementById('speed-indicator');
     const speedValue = document.getElementById('speed-value');
 
+    // App state flags
     let isMobile = false;
     let isLoaded = false;
     let isLocked = false;
     let moveSpeed = 400;
+    let showSpeedToast = false;
     let speedTimeout = null;
 
+    // Movement speeds & physics references
     const inputState = { fwd: 0, back: 0, left: 0, right: 0, up: 0, down: 0 };
     const mousePosition = { x: 0.5, y: 0.5 };
     let scrollPulse = 0.0;
@@ -125,19 +131,23 @@
     let clickIntensity = 0.0;
     let lastTime = performance.now();
 
+    // ThreeJS structure references
     let scene, camera, renderer, controls, composer, customPass, planeMesh, loadedTexture;
 
+    // Detect mobile agents
     function detectMobile() {
       isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     }
     detectMobile();
 
+    // 1. Initialise the components of the core Three.js Space
     function init() {
       const width = container.clientWidth;
       const height = container.clientHeight;
 
       scene = new THREE.Scene();
 
+      // 2. Camera Setup depending on Mobile/Desktop Aspect
       if (isMobile) {
         camera = new THREE.OrthographicCamera(-width / 2, width / 2, height / 2, -height / 2, 1, 10000);
         camera.position.set(0, 0, 1000);
@@ -146,6 +156,7 @@
         camera.position.set(-56.3, -7978.9, 4038.7);
       }
 
+      // 3. Renderer configuration
       renderer = new THREE.WebGLRenderer({
         canvas: canvas,
         antialias: true,
@@ -156,6 +167,7 @@
       renderer.setSize(width, height);
       renderer.setClearColor(0x000000, 0);
 
+      // 4. Composer Pass integration for GPU Optical distortion
       composer = new EffectComposer(renderer);
       const renderPass = new RenderPass(scene, camera);
       composer.addPass(renderPass);
@@ -174,8 +186,8 @@
         vertexShader: `
           varying vec2 vUv;
           void main() {
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
           }
         `,
         fragmentShader: `
@@ -308,6 +320,7 @@
       customPass = new ShaderPass(distortionShader);
       composer.addPass(customPass);
 
+      // 5. Pointer Lock controls setup for PC clients
       if (!isMobile) {
         controls = new PointerLockControls(camera, document.body);
         scene.add(controls.getObject());
@@ -325,6 +338,7 @@
         });
       }
 
+      // 6. Asynchronous Plane & Texture Loader execution
       const imageUrl = 'https://static.wixstatic.com/media/0b59fa_3fe2ed09c5cd4419bf6827d673f41701~mv2.jpg';
       const loadingManager = new THREE.LoadingManager();
       const textureLoader = new THREE.TextureLoader(loadingManager);
@@ -332,7 +346,7 @@
       textureLoader.load(imageUrl, (text) => {
         loadedTexture = text;
       }, undefined, (err) => {
-        console.error('Visual asset loader error:', err);
+        console.error('Core visual loading failure:', err);
         revealExplorerHUD();
       });
 
@@ -378,12 +392,14 @@
       };
     }
 
+    // Displays the HUD and swaps loading triggers
     function revealExplorerHUD() {
       isLoaded = true;
       loaderContent.classList.add('hidden');
       exploreContent.classList.remove('hidden');
     }
 
+    // 7. Event listeners & speed triggers mapping
     const handleKeyDown = (e) => {
       switch (e.code) {
         case 'KeyW': case 'ArrowUp': inputState.fwd = 1; break;
@@ -422,7 +438,7 @@
       if (isMobile) return;
 
       const rawDelta = e.deltaY;
-      const scalingPower = -rawDelta * 0.0018; 
+      const scalingPower = -rawDelta * 0.0018; // Five times scaled down for fluid command zoom
       const multiplier = Math.exp(scalingPower);
       
       moveSpeed = Math.max(10, Math.min(250000, Math.round(moveSpeed * multiplier)));
@@ -471,6 +487,7 @@
       mousePressed = 0.0;
     };
 
+    // Main interaction lock activator
     blocker.addEventListener('click', () => {
       if (isLoaded && controls) {
         controls.lock();
@@ -485,6 +502,7 @@
     window.addEventListener('blur', handleBlurOutside);
     window.addEventListener('wheel', handleWheel, { passive: true });
 
+    // Touch Support for Mobile Controls (Orthographic drag to Navigate + Pinch zoom)
     let lastTouchX = 0, lastTouchY = 0, startDist = 0, startZoom = 1, isTouching = false;
 
     function getDistance(t1, t2) {
@@ -578,6 +596,7 @@
       }
     }, { passive: true });
 
+    // 8. Resize handling
     const resizeObserver = new ResizeObserver((entries) => {
       if (!entries || entries.length === 0) return;
       const { width, height } = entries[0].contentRect;
@@ -607,6 +626,7 @@
     });
     resizeObserver.observe(container);
 
+    // 9. Frame-by-frame Flight physics tick loop
     const forwardVector = new THREE.Vector3();
     const rightVector = new THREE.Vector3();
     const moveVector = new THREE.Vector3();
@@ -703,6 +723,7 @@
       }
     }
 
+    // Set up and turn engine on
     init();
     tick();
 
